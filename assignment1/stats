@@ -1,0 +1,202 @@
+#!/bin/bash
+# Author: Tsewei Peng
+# Start of program
+
+########################################
+
+# Variables
+
+########################################
+
+# Variables for data filenams & TMP filenames
+datafilepath="datafile$$"
+TMPr="TMPRow$$"
+TMPc="TMPCol$$"
+TMPcm="TMPColMedian$$"
+TMPca="TMPColAve$$"
+
+# Variables for error messages
+InputFormatErr='./stats: {-rows|-cols} [file]'
+CannotReadErr='./stats: cannot read'
+
+########################################
+
+# Function
+
+########################################
+
+clean(){
+	if [ "$1" = "1" ]
+	then
+	   rm -f datafile*
+	fi
+	rm -f TMP*
+}
+
+
+########################################
+
+# Trapping Signals
+
+########################################
+
+trap "clean $#; echo -e \"\nSignal Catched! Exiting...\"; exit 1" INT HUP Term
+
+########################################
+
+# Validations
+
+########################################
+
+
+# Below is validation for the first argument, whether it starts with -r or -c
+# if neither, output error and exit 1
+
+if ! [[ $1 == -c* ]] && !  [[ $1 == -r* ]]
+then
+   echo "$InputFormatErr" 1>&2
+   exit 1
+fi
+
+# Below is validation for the length of all arguments,
+# if length is one, create a datafile and input
+# if length is two, assign filename to variable
+# if neight, output error and exit 1
+# if the file does not have read permission terminate and exit 1
+
+if [ "$#" = "1" ]
+then
+   cat > "$datafilepath"
+elif [ "$#" = "2" ]
+then
+   if [ ! -r "$2" ]
+   then
+      echo "$CannotReadErr $2" 1>&2
+      exit 1
+   fi
+   datafilepath=$2
+else
+   echo "$InputFormatErr" 1>&2
+   exit 1
+fi
+
+# Below is validation for the existence of file in second argument
+# if it does not exist, output error and exit 1
+# if the file does not contain word exit 0
+
+if [ ! -f $datafilepath ]
+then
+   echo "$CannotReadErr $2" 1>&2
+   exit 1
+fi
+
+# Below is validation for empty file
+# if file is empty, return error message
+if [ ! -s $datafilepath ]
+then
+   echo "File Empty" 1>&2
+   exit 1
+fi
+
+
+#######################################
+
+# Program
+
+#######################################
+
+# Below if statement is code block for "-row" option
+if [[ $1 == -r* ]]
+then
+   # setup variables for counting
+   colCount=0
+   echo "Average Median" > $TMPr
+   while read line
+   do
+        # Reset Column Count, sum average and median to 0
+	colCount=0
+        sum=0
+	aver=0
+	med=0
+
+	# For each line, add all the numbers to the sum
+	for i in $line
+	do
+		sum=$(expr $sum + $i)
+		colCount=$(expr $colCount + 1)
+	done
+
+	# Calculate average and median through piping
+	aver=$(expr $(expr $sum + $(expr $colCount / 2)) / $colCount)
+	med=$(echo "$line" | tr '\t' '\n' | sort -n | tr '\n' '\t' | cut -f $(expr $(expr $colCount / 2) + 1))
+
+	# Output result into a temp file
+	echo -e "$aver\t$med" >> $TMPr
+
+   done < $datafilepath # Pass data from datafile
+
+   # output the final data from Temp File
+   while read line
+   do
+	echo -e "$line"
+   done < $TMPr
+
+# Below elif state is code block for "-column" option
+elif [[ $1 == -c* ]]
+then
+   	colCount=0
+
+	# Below is the code to calculate how many columns are in a line
+	line=$(head -n 1 $datafilepath)
+	for i in $line
+	do
+	   	colCount=$(expr $colCount + 1)
+	done
+
+	# Add 1 to colCount for the while loop conditional statement
+	colCount=$(expr $colCount + 1)
+
+	# Variable for the current column
+	curCol=1
+
+	# While statement, if the curCol does not equal to colCount, continue calculation
+	while ! [ $curCol = $colCount ]
+	do
+	   	# Fetch the column from file and convert it to a single-row variable with \t delimiter, and output to temp file
+	   	line=$(cut -f $curCol $datafilepath | tr '\n' '\t')
+		echo -e "$line" > $TMPc
+
+		curCol=$(expr $curCol + 1)
+        	
+		# Reset Column Count, sum average and median to 0
+		rowCount=0
+		sum=0
+		aver=0
+		med=0
+
+		# For each line, add all the numbers to the sum
+		for i in $line
+		do
+			sum=$(expr $sum + $i)
+			rowCount=$(expr $rowCount + 1)
+		done
+
+		# Calculate average and median through piping
+		aver=$(expr $(expr $sum + $(expr $rowCount / 2)) / $rowCount)
+		med=$(echo "$line" | tr '\t' '\n' | sort -n | tr '\n' '\t' | cut -f $(expr $(expr $rowCount / 2) + 2))
+		
+		# Output average and median to temp files
+		echo -e "$aver" >> $TMPca
+		echo -e "$med" >> $TMPcm
+	done
+
+	# Output the stats value for temp files with formatting
+	echo -e "Average:"
+	tr '\n' '\t' < $TMPca
+	echo -e "\nMedian:"
+	tr '\n' '\t' < $TMPcm
+	echo -e "\n"
+fi
+
+# Below are cleanUp codes
+clean $#
